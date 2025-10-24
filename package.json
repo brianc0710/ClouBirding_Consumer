@@ -1,0 +1,14 @@
+{
+  "name": "cloubirding_consumer",
+  "version": "1.0.0",
+  "description": "Consumer microservice for CloudBirding app - handles SQS messages for background image analysis",
+  "main": "src/ObservationConsumer.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/ObservationConsumer.js"
+  },
+  "dependencies": {
+    "@aws-sdk/client-sqs": "^3.500.0",
+    "dotenv": "^16.4.5"
+  }
+}
