@@ -4,8 +4,8 @@ import dotenv from "dotenv";
 dotenv.config();
 
 // Load config from environment variables
-const REGION = process.env.AWS_REGION;
-const QUEUE_URL = process.env.QUEUE_URL;
+const REGION = "ap-southeast-2";
+const QUEUE_URL = "https://sqs.ap-southeast-2.amazonaws.com/901444280953/n10820566-ClouBirding-queue";
 
 // Create SQS client
 const sqsClient = new SQSClient({ region: REGION });
