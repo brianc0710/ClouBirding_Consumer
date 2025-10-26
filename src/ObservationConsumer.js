@@ -46,29 +46,28 @@ async function uploadToS3(bucket, key, buffer, contentType) {
 }
 
 async function processImage(bucket, key, observationId) {
-  console.log(`🧠 Processing image: ${key}`);
-
-  const tempPath = path.join("/tmp", path.basename(key)); 
-  const compressedKey = key.replace(/\.(jpg|jpeg|png)$/i, "_compressed.$1");
-  const thumbKey = key.replace(/\.(jpg|jpeg|png)$/i, "_thumb.$1");
-
-  await downloadFromS3(bucket, key, tempPath);
-
-  const image = sharp(tempPath);
-  const metadata = await image.metadata();
-
-  const compressedBuffer = await image.jpeg({ quality: 70 }).toBuffer();
-  const thumbnailBuffer = await image.resize({ width: 300 }).jpeg({ quality: 60 }).toBuffer();
-
-  // upload compress file
-  await uploadToS3(bucket, compressedKey, compressedBuffer, "image/jpeg");
-  await uploadToS3(bucket, thumbKey, thumbnailBuffer, "image/jpeg");
-
-  const compressedUrl = `https://${bucket}.s3.${REGION}.amazonaws.com/${compressedKey}`;
-  const thumbnailUrl = `https://${bucket}.s3.${REGION}.amazonaws.com/${thumbKey}`;
-
-  // update DynamoDB 
   try {
+    console.log(`🧠 Processing image: ${key}`);
+
+    const tempPath = path.join("/tmp", path.basename(key)); 
+    const compressedKey = key.replace(/\.(jpg|jpeg|png)$/i, "_compressed.$1");
+    const thumbKey = key.replace(/\.(jpg|jpeg|png)$/i, "_thumb.$1");
+
+    await downloadFromS3(bucket, key, tempPath);
+    console.log(`📥 Downloaded ${key} to ${tempPath}`);
+
+    const image = sharp(tempPath);
+    const compressedBuffer = await image.jpeg({ quality: 70 }).toBuffer();
+    const thumbnailBuffer = await image.resize({ width: 300 }).jpeg({ quality: 60 }).toBuffer();
+
+    await uploadToS3(bucket, compressedKey, compressedBuffer, "image/jpeg");
+    await uploadToS3(bucket, thumbKey, thumbnailBuffer, "image/jpeg");
+
+    console.log(`📤 Uploaded compressed + thumbnail for ${key}`);
+
+    const compressedUrl = `https://${bucket}.s3.${REGION}.amazonaws.com/${compressedKey}`;
+    const thumbnailUrl = `https://${bucket}.s3.${REGION}.amazonaws.com/${thumbKey}`;
+
     const updateParams = {
       TableName: TABLE_NAME,
       Key: { observationId: { S: observationId } },
@@ -79,14 +78,15 @@ async function processImage(bucket, key, observationId) {
       },
     };
     await dynamoClient.send(new UpdateItemCommand(updateParams));
-    console.log(`✅ DynamoDB updated with thumbnail/compressed URLs for ${observationId}`);
-  } catch (err) {
-    console.error("❌ Failed to update DynamoDB:", err);
-  }
+    console.log(`✅ DynamoDB updated for ${observationId}`);
 
-  fs.unlinkSync(tempPath);
-  console.log(`🧹 Cleaned up temp file for ${observationId}`);
+    fs.unlinkSync(tempPath);
+    console.log(`🧹 Cleaned up temp file for ${observationId}`);
+  } catch (err) {
+    console.error(`❌ Error processing image ${key}:`, err);
+  }
 }
+
 
 /**
  * Poll SQS loop
