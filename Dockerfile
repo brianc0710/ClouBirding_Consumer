@@ -1,6 +1,9 @@
 # Use official Node.js image
 FROM node:18
 
+# Install system dependencies for sharp
+RUN apt-get update && apt-get install -y libvips libvips-dev && rm -rf /var/lib/apt/lists/*
+
 # Set working directory inside container
 WORKDIR /app
 
