@@ -1,18 +1,20 @@
 import { SQSClient, ReceiveMessageCommand, DeleteMessageCommand } from "@aws-sdk/client-sqs";
 import { S3Client, GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import { DynamoDBClient, UpdateItemCommand } from "@aws-sdk/client-dynamodb";
-import dotenv from "dotenv";
 import sharp from "sharp";
 import fs from "fs";
 import path from "path";
-
-dotenv.config();
 
 const REGION = "ap-southeast-2";
 const QUEUE_URL = "https://sqs.ap-southeast-2.amazonaws.com/901444280953/n10820566-ClouBirding-queue";
 const BUCKET_NAME = "n10820566-cloubirding";
 const TABLE_NAME = "10820566CloudBirdingObservations";
 
+/**
+ * ============================
+ * AWS CLIENTS
+ * ============================
+ */
 const sqsClient = new SQSClient({ region: REGION });
 const s3Client = new S3Client({ region: REGION });
 const dynamoClient = new DynamoDBClient({ region: REGION });
@@ -20,11 +22,20 @@ const dynamoClient = new DynamoDBClient({ region: REGION });
 console.log("🚀 CloudBirding Consumer started...");
 console.log(`📍 Listening to queue: ${QUEUE_URL}\n`);
 
+/**
+ * ============================
+ * HELPER FUNCTIONS
+ * ============================
+ */
 
+/**
+ * Download OG file
+ */
 async function downloadFromS3(bucket, key, downloadPath) {
   const command = new GetObjectCommand({ Bucket: bucket, Key: key });
   const data = await s3Client.send(command);
   const stream = fs.createWriteStream(downloadPath);
+
   await new Promise((resolve, reject) => {
     data.Body.pipe(stream);
     data.Body.on("error", reject);
