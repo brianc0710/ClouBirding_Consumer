@@ -108,7 +108,7 @@ async function pollMessages() {
         const body = JSON.parse(message.Body);
         const observationId = body.observationId;
         const fileURL = body.fileURL;
-        const key = fileURL.split("/").pop(); // e.g., bird.jpg
+        const key = decodeURIComponent(fileURL.split("/").pop().split("?")[0]);
 
         // compress
         await processImage(BUCKET_NAME, key, observationId);
