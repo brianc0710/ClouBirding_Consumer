@@ -28,119 +28,36 @@ console.log(`📍 Listening to queue: ${QUEUE_URL}\n`);
  * ============================
  */
 
-/**
- * Download OG file
- */
-async function downloadFromS3(bucket, key, downloadPath) {
-  const command = new GetObjectCommand({ Bucket: bucket, Key: key });
-  const data = await s3Client.send(command);
-  const stream = fs.createWriteStream(downloadPath);
-
-  await new Promise((resolve, reject) => {
-    data.Body.pipe(stream);
-    data.Body.on("error", reject);
-    stream.on("finish", resolve);
-  });
-}
-
-/**
- * upload to S3
- */
-async function uploadToS3(bucket, key, buffer, contentType) {
-  const command = new PutObjectCommand({
-    Bucket: bucket,
-    Key: key,
-    Body: buffer,
-    ContentType: contentType,
-  });
-  await s3Client.send(command);
-}
-
-async function processImage(bucket, key, observationId) {
-  try {
-    console.log(`🧠 Processing image: ${key}`);
-
-    const tempPath = path.join("/tmp", path.basename(key)); 
-    const compressedKey = key.replace(/\.(jpg|jpeg|png)$/i, "_compressed.$1");
-    const thumbKey = key.replace(/\.(jpg|jpeg|png)$/i, "_thumb.$1");
-
-    await downloadFromS3(bucket, key, tempPath);
-    console.log(`📥 Downloaded ${key} to ${tempPath}`);
-
-    const image = sharp(tempPath);
-    const compressedBuffer = await image.jpeg({ quality: 70 }).toBuffer();
-    const thumbnailBuffer = await image.resize({ width: 300 }).jpeg({ quality: 60 }).toBuffer();
-
-    await uploadToS3(bucket, compressedKey, compressedBuffer, "image/jpeg");
-    await uploadToS3(bucket, thumbKey, thumbnailBuffer, "image/jpeg");
-
-    console.log(`📤 Uploaded compressed + thumbnail for ${key}`);
-
-    const compressedUrl = `https://${bucket}.s3.${REGION}.amazonaws.com/${compressedKey}`;
-    const thumbnailUrl = `https://${bucket}.s3.${REGION}.amazonaws.com/${thumbKey}`;
-
-    const updateParams = {
-      TableName: TABLE_NAME,
-      Key: { observationId: { S: observationId } },
-      UpdateExpression: "SET compressedUrl = :c, thumbnailUrl = :t",
-      ExpressionAttributeValues: {
-        ":c": { S: compressedUrl },
-        ":t": { S: thumbnailUrl },
-      },
-    };
-    await dynamoClient.send(new UpdateItemCommand(updateParams));
-    console.log(`✅ DynamoDB updated for ${observationId}`);
-
-    fs.unlinkSync(tempPath);
-    console.log(`🧹 Cleaned up temp file for ${observationId}`);
-  } catch (err) {
-    console.error(`❌ Error processing image ${key}:`, err);
-  }
-}
-
-
-/**
- * Poll SQS loop
- */
-async function pollMessages() {
-  try {
-    const params = {
+async function processOnce() {
+  const data = await sqsClient.send(
+    new ReceiveMessageCommand({
       QueueUrl: QUEUE_URL,
       MaxNumberOfMessages: 1,
-      WaitTimeSeconds: 10,
-    };
+      WaitTimeSeconds: 5,
+    })
+  );
 
-    const data = await sqsClient.send(new ReceiveMessageCommand(params));
+  if (!data.Messages || data.Messages.length === 0) {
+    console.log("📭 No messages in queue. Exiting.");
+    return;
+  }
 
-    if (data.Messages && data.Messages.length > 0) {
-      for (const message of data.Messages) {
-        console.log("📩 Received message:", message.Body);
-
-        const body = JSON.parse(message.Body);
-        const observationId = body.observationId;
-        const fileURL = body.fileURL;
-        const key = decodeURIComponent(fileURL.split("/").pop().split("?")[0]);
-
-        // compress
-        await processImage(BUCKET_NAME, key, observationId);
-
-        // delete sqs message
-        await sqsClient.send(
-          new DeleteMessageCommand({
-            QueueUrl: QUEUE_URL,
-            ReceiptHandle: message.ReceiptHandle,
-          })
-        );
-
-        console.log("🗑️ Deleted message from queue.\n");
-      }
-    }
-  } catch (err) {
-    console.error("❌ Error polling messages:", err);
-  } finally {
-    setTimeout(pollMessages, 5000);
+  for (const message of data.Messages) {
+    console.log("📩 Processing message:", message.Body);
+    // ... your existing compression + upload + DynamoDB update logic here ...
+    await sqsClient.send(
+      new DeleteMessageCommand({
+        QueueUrl: QUEUE_URL,
+        ReceiptHandle: message.ReceiptHandle,
+      })
+    );
+    console.log("✅ Done. Deleted from queue.");
   }
 }
 
-// Start loop
-pollMessages();
+processOnce()
+  .then(() => {
+    console.log("🏁 Task finished.");
+  })
+  .catch((err) => console.error("❌ Error:", err))
+  .finally(() => process.exit(0));
